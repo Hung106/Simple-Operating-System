@@ -13,7 +13,8 @@
 static int time_slot;
 static int num_cpus;
 static int done = 0;
-
+#undef CPU_TLB
+#undef MM_PAGING
 #ifdef CPU_TLB
 static int tlbsz;
 #endif
