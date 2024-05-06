@@ -19,9 +19,10 @@
 
 #include "mm.h"
 #include <stdlib.h>
-
+#include <pthread.h>
 #define init_tlbcache(mp,sz,...) init_memphy(mp, sz, (1, ##__VA_ARGS__))
-
+pthread_mutex_t entry_lock = PTHREAD_MUTEX_INITIALIZER;;
+pthread_mutex_t cache_lock = PTHREAD_MUTEX_INITIALIZER;
 /*
  *  tlb_cache_read read TLB cache device
  *  @mp: memphy struct
@@ -29,13 +30,35 @@
  *  @pgnum: page number
  *  @value: obtained value
  */
-int tlb_cache_read(struct memphy_struct * mp, int pid, int pgnum, BYTE value)
+static struct cache_entry{
+    int valid;
+    int pid;
+    int tag;
+} tlb_cache[MAX_CACHE_INDEX];
+int insert_cache_entry(struct pcb_t * proc,  int pgnum){
+   int index = pgnum % MAX_CACHE_INDEX;
+   int tag = pgnum / MAX_CACHE_INDEX;
+   pthread_mutex_lock(&entry_lock);
+   tlb_cache[index].valid = 1;
+   tlb_cache[index].pid = proc->pid;
+   tlb_cache->tag = tag;
+   pthread_mutex_unlock(&entry_lock);
+   return 0;
+}
+int tlb_cache_read(struct pcb_t * proc, int pgnum, int offset, BYTE * value)
 {
    /* TODO: the identify info is mapped to 
     *      cache line by employing:
     *      direct mapped, associated mapping etc.
     */
-   return 0;
+   int index = pgnum % MAX_CACHE_INDEX;
+   int tag = pgnum / MAX_CACHE_INDEX;
+   if(tlb_cache[index].valid == 1 && tlb_cache[index].pid == proc->pid && tlb_cache[index].tag == tag){
+      int addr = pgnum * PAGING_PAGESZ + offset;
+      TLBMEMPHY_read(proc->tlb,addr,value);
+      return 0;
+   }
+   return -1;
 }
 
 /*
@@ -45,13 +68,21 @@ int tlb_cache_read(struct memphy_struct * mp, int pid, int pgnum, BYTE value)
  *  @pgnum: page number
  *  @value: obtained value
  */
-int tlb_cache_write(struct memphy_struct *mp, int pid, int pgnum, BYTE value)
+int tlb_cache_write(struct pcb_t * proc,  int pgnum, int offset, BYTE value)
 {
    /* TODO: the identify info is mapped to 
     *      cache line by employing:
     *      direct mapped, associated mapping etc.
     */
-   return 0;
+   int index = pgnum % MAX_CACHE_INDEX;
+   int tag = pgnum / MAX_CACHE_INDEX;
+   if(tlb_cache[index].valid == 1 && tlb_cache[index].pid == proc->pid && tlb_cache[index].tag == tag){
+      int addr = pgnum * PAGING_PAGESZ + offset;
+      TLBMEMPHY_write(proc->tlb,addr,value);
+      _cache_page(proc->tlb,pgnum,proc->mram,PAGING_FPN_PRESENT(proc->mm->pgd[pgnum]));
+      return 0;
+   }
+   return -1;
 }
 
 /*
@@ -100,10 +131,15 @@ int TLBMEMPHY_dump(struct memphy_struct * mp)
    /*TODO dump memphy contnt mp->storage 
     *     for tracing the memory content
     */
-
+   printf("Memory Physical Content:\n");
+    for (int i = 0; i < mp->maxsz; i++) {
+        printf("%d ", mp->storage[i]);
+        if ((i + 1) % 16 == 0) 
+            printf("\n");
+    }
+    printf("\n");
    return 0;
 }
-
 
 /*
  *  Init TLBMEMPHY struct
@@ -112,9 +148,10 @@ int init_tlbmemphy(struct memphy_struct *mp, int max_size)
 {
    mp->storage = (BYTE *)malloc(max_size*sizeof(BYTE));
    mp->maxsz = max_size;
-
    mp->rdmflg = 1;
-
+   for(int index = 0; index < MAX_CACHE_INDEX; index++){
+      tlb_cache[index].valid = 0;
+   }
    return 0;
 }
 

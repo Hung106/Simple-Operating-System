@@ -15,7 +15,8 @@
 #include "mm.h"
 #include <stdlib.h>
 #include <stdio.h>
-
+extern tlb_cache;
+extern MAX_CACHE_INDEX;
 int tlb_change_all_page_tables_of(struct pcb_t *proc,  struct memphy_struct * mp)
 {
   /* TODO update all page table directory info 
@@ -25,11 +26,13 @@ int tlb_change_all_page_tables_of(struct pcb_t *proc,  struct memphy_struct * mp
   return 0;
 }
 
-int tlb_flush_tlb_of(struct pcb_t *proc, struct memphy_struct * mp)
+int tlb_flush_tlb_of(struct pcb_t *proc, struct memphy_struct *mp)
 {
-  /* TODO flush tlb cached*/
+    for (int i = 0; i < MAX_CACHE_INDEX; i++) {
+        tlb_cache[i].valid = 0; 
+    }
 
-  return 0;
+    return 0; 
 }
 
 /*tlballoc - CPU TLB-based allocate a region memory
@@ -43,10 +46,9 @@ int tlballoc(struct pcb_t *proc, uint32_t size, uint32_t reg_index)
 
   /* By default using vmaid = 0 */
   val = __alloc(proc, 0, reg_index, size, &addr);
-
+  
   /* TODO update TLB CACHED frame num of the new allocated page(s)*/
   /* by using tlb_cache_read()/tlb_cache_write()*/
-
   return val;
 }
 
@@ -61,7 +63,6 @@ int tlbfree_data(struct pcb_t *proc, uint32_t reg_index)
 
   /* TODO update TLB CACHED frame num of freed page(s)*/
   /* by using tlb_cache_read()/tlb_cache_write()*/
-
   return 0;
 }
 
@@ -75,28 +76,35 @@ int tlbfree_data(struct pcb_t *proc, uint32_t reg_index)
 int tlbread(struct pcb_t * proc, uint32_t source,
             uint32_t offset, 	uint32_t destination) 
 {
-  BYTE data, frmnum = -1;
+  BYTE data;
 	
   /* TODO retrieve TLB CACHED frame num of accessing page(s)*/
   /* by using tlb_cache_read()/tlb_cache_write()*/
   /* frmnum is return value of tlb_cache_read/write value*/
 	
 #ifdef IODUMP
-  if (frmnum >= 0)
-    printf("TLB hit at read region=%d offset=%d\n", 
-	         source, offset);
-  else 
+  struct vm_rg_struct rg = proc->mm->symrgtbl[source];
+  int addr = rg.rg_start + offset;
+  int pgn = PAGING_PGN(addr);
+  int offst = PAGING_OFFST(addr);
+  if (tlb_cache_read(proc,pgn,offst,&data) == 0){
+        printf("TLB hit at read region=%d offset=%d value=%d\n", 
+	      source, offset, data);
+        print_pgtbl(proc, 0, -1);
+        return 0;
+  }
     printf("TLB miss at read region=%d offset=%d\n", 
 	         source, offset);
 #ifdef PAGETBL_DUMP
-  print_pgtbl(proc, 0, -1); //print max TBL
+  //print max TBL
 #endif
   MEMPHY_dump(proc->mram);
 #endif
 
   int val = __read(proc, 0, source, offset, &data);
-
-  destination = (uint32_t) data;
+  printf("read region=%d offset=%d value=%d\n", source, offset, data);
+  print_pgtbl(proc, 0, -1); 
+  proc->regs[destination] = (uint32_t) data;
 
   /* TODO update TLB CACHED with frame num of recent accessing page(s)*/
   /* by using tlb_cache_read()/tlb_cache_write()*/
@@ -114,31 +122,36 @@ int tlbwrite(struct pcb_t * proc, BYTE data,
              uint32_t destination, uint32_t offset)
 {
   int val;
-  BYTE frmnum = -1;
 
   /* TODO retrieve TLB CACHED frame num of accessing page(s))*/
   /* by using tlb_cache_read()/tlb_cache_write()
   frmnum is return value of tlb_cache_read/write value*/
-
+  struct vm_rg_struct rg = proc->mm->symrgtbl[destination];
+  int addr = rg.rg_start + offset;
+  int pgn = PAGING_PGN(addr);
+  int offst = PAGING_OFFST(addr);
 #ifdef IODUMP
-  if (frmnum >= 0)
+  if (tlb_cache_write(proc,pgn,offst,data) == 0){
     printf("TLB hit at write region=%d offset=%d value=%d\n",
 	          destination, offset, data);
-	else
+             print_pgtbl(proc, 0, -1);
+             return 0;
+  }else{
     printf("TLB miss at write region=%d offset=%d value=%d\n",
             destination, offset, data);
+  
 #ifdef PAGETBL_DUMP
-  print_pgtbl(proc, 0, -1); //print max TBL
+  //print max TBL
 #endif
   MEMPHY_dump(proc->mram);
 #endif
-
+  print_pgtbl(proc, 0, -1);
   val = __write(proc, 0, destination, offset, data);
-
   /* TODO update TLB CACHED with frame num of recent accessing page(s)*/
   /* by using tlb_cache_read()/tlb_cache_write()*/
 
   return val;
+  }
 }
 
 //#endif
