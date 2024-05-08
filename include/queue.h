@@ -8,6 +8,8 @@
 
 struct queue_t {
 	struct pcb_t * proc[MAX_QUEUE_SIZE];
+	int front;
+	int rear;
 	int size;
 };
 

@@ -13,8 +13,7 @@
 static int time_slot;
 static int num_cpus;
 static int done = 0;
-#undef CPU_TLB
-#undef MM_PAGING
+
 #ifdef CPU_TLB
 static int tlbsz;
 #endif
@@ -77,6 +76,12 @@ static void * cpu_routine(void * args) {
 				id, proc->pid);
 			put_proc(proc);
 			proc = get_proc();
+		}else if(proc->pc == -1){
+			printf("\tCPU %d: Processed %2d has stopped\n",
+				id ,proc->pid);
+			free(proc);
+			proc = get_proc();
+			time_left = 0;
 		}
 		
 		/* Recheck process status after loading new process */
@@ -96,9 +101,12 @@ static void * cpu_routine(void * args) {
 		}
 		
 		/* Run current process */
-		run(proc);
-		time_left--;
-		next_slot(timer_id);
+			if(run(proc) == 0){
+				time_left--;
+				next_slot(timer_id);
+			}else{
+				proc->pc = -1;
+			}
 	}
 	detach_event(timer_id);
 	pthread_exit(NULL);
@@ -110,6 +118,7 @@ static void * ld_routine(void * args) {
 	struct memphy_struct** mswp = ((struct mmpaging_ld_args *)args)->mswp;
 	struct memphy_struct* active_mswp = ((struct mmpaging_ld_args *)args)->active_mswp;
 	struct timer_id_t * timer_id = ((struct mmpaging_ld_args *)args)->timer_id;
+	struct memphy_struct * tlb = ((struct mmpaging_ld_args *)args)->tlb;
 #else
 	struct timer_id_t * timer_id = (struct timer_id_t*)args;
 #endif
@@ -125,10 +134,11 @@ static void * ld_routine(void * args) {
 		}
 #ifdef MM_PAGING
 		proc->mm = malloc(sizeof(struct mm_struct));
-		init_mm(proc->mm, proc);
 		proc->mram = mram;
 		proc->mswp = mswp;
 		proc->active_mswp = active_mswp;
+		proc->tlb = tlb;
+		init_mm(proc->mm, proc);
 #endif
 		printf("\tLoaded a process at %s, PID: %d PRIO: %ld\n",
 			ld_processes.path[i], proc->pid, ld_processes.prio[i]);
@@ -232,75 +242,75 @@ int main(int argc, char * argv[]) {
 	pthread_t ld;
 	
 	/* Init timer */
-	int i;
-	for (i = 0; i < num_cpus; i++) {
-		args[i].timer_id = attach_event();
-		args[i].id = i;
-	}
-	struct timer_id_t * ld_event = attach_event();
-	start_timer();
-#ifdef CPU_TLB
-	struct memphy_struct tlb;
+ 	int i;
+ 	for (i = 0; i < num_cpus; i++) {
+ 		args[i].timer_id = attach_event();
+ 		args[i].id = i;
+ 	}
+ 	struct timer_id_t * ld_event = attach_event();
+ 	start_timer();
+ #ifdef CPU_TLB
+ 	struct memphy_struct tlb;
 
-	init_tlbmemphy(&tlb, tlbsz);
-#endif
+ 	init_tlbmemphy(&tlb, tlbsz);
+ #endif
 
-#ifdef MM_PAGING
-	/* Init all MEMPHY include 1 MEMRAM and n of MEMSWP */
-	int rdmflag = 1; /* By default memphy is RANDOM ACCESS MEMORY */
+ #ifdef MM_PAGING
+ 	/* Init all MEMPHY include 1 MEMRAM and n of MEMSWP */
+ 	int rdmflag = 1; /* By default memphy is RANDOM ACCESS MEMORY */
 
-	struct memphy_struct mram;
-	struct memphy_struct mswp[PAGING_MAX_MMSWP];
+ 	struct memphy_struct mram;
+ 	struct memphy_struct mswp[PAGING_MAX_MMSWP];
 
 
-	/* Create MEM RAM */
-	init_memphy(&mram, memramsz, rdmflag);
+ 	/* Create MEM RAM */
+ 	init_memphy(&mram, memramsz, rdmflag);
 
-	/* Create all MEM SWAP */ 
-	int sit;
-	for(sit = 0; sit < PAGING_MAX_MMSWP; sit++)
-	       init_memphy(&mswp[sit], memswpsz[sit], rdmflag);
+ 	/* Create all MEM SWAP */ 
+ 	int sit;
+ 	for(sit = 0; sit < PAGING_MAX_MMSWP; sit++)
+ 	       init_memphy(&mswp[sit], memswpsz[sit], !rdmflag);
 
-	/* In Paging mode, it needs passing the system mem to each PCB through loader*/
-	struct mmpaging_ld_args *mm_ld_args = malloc(sizeof(struct mmpaging_ld_args));
+ 	/* In Paging mode, it needs passing the system mem to each PCB through loader*/
+ 	struct mmpaging_ld_args *mm_ld_args = malloc(sizeof(struct mmpaging_ld_args));
 
-	mm_ld_args->timer_id = ld_event;
-	mm_ld_args->mram = (struct memphy_struct *) &mram;
-	mm_ld_args->mswp = (struct memphy_struct**) &mswp;
-	mm_ld_args->active_mswp = (struct memphy_struct *) &mswp[0];
-#endif
+ 	mm_ld_args->timer_id = ld_event;
+ 	mm_ld_args->mram = (struct memphy_struct *) &mram;
+ 	mm_ld_args->mswp = (struct memphy_struct**) &mswp;
+ 	mm_ld_args->active_mswp = (struct memphy_struct *) &mswp[0];
+ #endif
 
-#ifdef CPU_TLB
-#ifdef MM_PAGING
-	/* In MM_PAGING employ CPU_TLB mode, it needs passing
-	 * the system tlb to each PCB through loader
-	*/
-	mm_ld_args->tlb = (struct memphy_struct *) &tlb;
-#endif
-#endif
+ #ifdef CPU_TLB
+ #ifdef MM_PAGING
+ 	/* In MM_PAGING employ CPU_TLB mode, it needs passing
+ 	 * the system tlb to each PCB through loader
+ 	*/
+ 	mm_ld_args->tlb = (struct memphy_struct *) &tlb;
+ #endif
+ #endif
 
-	/* Init scheduler */
-	init_scheduler();
+ 	/* Init scheduler */
+ 	init_scheduler();
 
-	/* Run CPU and loader */
-#ifdef MM_PAGING
-	pthread_create(&ld, NULL, ld_routine, (void*)mm_ld_args);
-#else
-	pthread_create(&ld, NULL, ld_routine, (void*)ld_event);
-#endif
-	for (i = 0; i < num_cpus; i++) {
-		pthread_create(&cpu[i], NULL,
-			cpu_routine, (void*)&args[i]);
-	}
+ 	/* Run CPU and loader */
+ #ifdef MM_PAGING
+ 	pthread_create(&ld, NULL, ld_routine, (void*)mm_ld_args);
+ #else
+ 	pthread_create(&ld, NULL, ld_routine, (void*)ld_event);
+ #endif
+ 	for (i = 0; i < num_cpus; i++) {
+ 		pthread_create(&cpu[i], NULL,
+ 			cpu_routine, (void*)&args[i]);
+ 	}
 
-	/* Wait for CPU and loader finishing */
-	for (i = 0; i < num_cpus; i++) {
-		pthread_join(cpu[i], NULL);
-	}
-	pthread_join(ld, NULL);
+ 	/* Wait for CPU and loader finishing */
+ 	for (i = 0; i < num_cpus; i++) {
+ 		pthread_join(cpu[i], NULL);
+ 	}
+ 	pthread_join(ld, NULL);
 
-	/* Stop timer */
-	stop_timer();
+ 	/* Stop timer */
+ 	stop_timer();
 
 	return 0;
 

@@ -131,15 +131,10 @@ int TLBMEMPHY_dump(struct memphy_struct * mp)
    /*TODO dump memphy contnt mp->storage 
     *     for tracing the memory content
     */
-   printf("Memory Physical Content:\n");
-    for (int i = 0; i < mp->maxsz; i++) {
-        printf("%d ", mp->storage[i]);
-        if ((i + 1) % 16 == 0) 
-            printf("\n");
-    }
-    printf("\n");
+
    return 0;
 }
+
 
 /*
  *  Init TLBMEMPHY struct

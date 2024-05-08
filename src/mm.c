@@ -91,19 +91,30 @@ int vmap_page_range(struct pcb_t *caller, // process call
   int pgit = 0;
   int pgn = PAGING_PGN(addr);
 
-  ret_rg->rg_end = ret_rg->rg_start = addr; // at least the very first space is usable
-
-  fpit->fp_next = frames;
+  // ret_rg->rg_end = ret_rg->rg_start = addr; // at least the very first space is usable
+  //!
+  ret_rg->rg_start = addr; // at least the very first space is usable
+  ret_rg->rg_end = ret_rg->rg_start + pgnum * PAGING_PAGESZ; 
+  //!
+  //fpit->fp_next = frames; //?code có sẵn mà bỏ
 
   /* TODO map range of frame to address space 
    *      [addr to addr + pgnum*PAGING_PAGESZ
    *      in page table caller->mm->pgd[]
    */
+//!
+  for (; pgit < pgnum; ++pgit)
+  {
+    fpit = frames;
+    pte_set_fpn(&caller->mm->pgd[pgn + pgit], fpit->fpn);
+    frames = frames->fp_next;
+    free(fpit);
+//!
 
    /* Tracking for later page replacement activities (if needed)
     * Enqueue new usage page */
    enlist_pgn_node(&caller->mm->fifo_pgn, pgn+pgit);
-
+  }
 
   return 0;
 }
@@ -119,15 +130,47 @@ int alloc_pages_range(struct pcb_t *caller, int req_pgnum, struct framephy_struc
 {
   int pgit, fpn;
   //struct framephy_struct *newfp_str;
-
-  for(pgit = 0; pgit < req_pgnum; pgit++)
+  //!
+  struct framephy_struct *newfp_str = NULL;
+ 
+  for (pgit = 0; pgit < req_pgnum; pgit++)
   {
-    if(MEMPHY_get_freefp(caller->mram, &fpn) == 0)
-   {
-     
-   } else {  // ERROR CODE of obtaining somes but not enough frames
-   } 
- }
+    newfp_str = (struct framephy_struct *)malloc(sizeof(struct framephy_struct));
+    if (MEMPHY_get_freefp(caller->mram, &fpn) == 0)
+    {
+      newfp_str->fpn = fpn;
+    }
+    else
+    { // ERROR CODE of obtaining somes but not enough frames
+      int vicpgn, swpfpn;
+      if (find_victim_page(caller->mm, &vicpgn) == -1 || MEMPHY_get_freefp(caller->active_mswp, &swpfpn) == -1)
+      {
+        if (*frm_lst == NULL)
+        {
+          return -1;
+        }
+        else
+        {
+          struct framephy_struct *freefp_str;
+          while (*frm_lst != NULL)
+          {
+            freefp_str = *frm_lst;
+            *frm_lst = (*frm_lst)->fp_next;
+            free(freefp_str);
+          }
+          return -3000;
+        }
+      }
+      uint32_t vicpte = caller->mm->pgd[vicpgn];
+      int vicfpn = PAGING_FPN(vicpte);
+      __swap_cp_page(caller->mram, vicfpn, caller->active_mswp, swpfpn);
+      pte_set_swap(&caller->mm->pgd[vicpgn], 0, swpfpn);
+      newfp_str->fpn = vicfpn;
+    }
+    newfp_str->fp_next = *frm_lst;
+    *frm_lst = newfp_str;
+  }
+ //!
 
   return 0;
 }
@@ -203,7 +246,7 @@ int __swap_cp_page(struct memphy_struct *mpsrc, int srcfpn,
  *Initialize a empty Memory Management instance
  * @mm:     self mm
  * @caller: mm owner
- */
+ *///trong code mẫu thì vma->vm_id = 0;
 int init_mm(struct mm_struct *mm, struct pcb_t *caller)
 {
   struct vm_area_struct * vma = malloc(sizeof(struct vm_area_struct));
@@ -211,7 +254,7 @@ int init_mm(struct mm_struct *mm, struct pcb_t *caller)
   mm->pgd = malloc(PAGING_MAX_PGN*sizeof(uint32_t));
 
   /* By default the owner comes with at least one vma */
-  vma->vm_id = 1;
+  vma->vm_id = 1;  
   vma->vm_start = 0;
   vma->vm_end = vma->vm_start;
   vma->sbrk = vma->vm_start;
@@ -225,7 +268,21 @@ int init_mm(struct mm_struct *mm, struct pcb_t *caller)
 
   return 0;
 }
+int _cache_page(struct memphy_struct *mpsrc, int srcfpn,
+                struct memphy_struct *mpdst, int dstfpn){
+  int cellidx;
+  int addrsrc,addrdst;
+  for(cellidx = 0; cellidx < PAGING_PAGESZ; cellidx++)
+  {
+    addrsrc = srcfpn * PAGING_PAGESZ + cellidx;
+    addrdst = dstfpn * PAGING_PAGESZ + cellidx;
 
+    BYTE data;
+    MEMPHY_read(mpsrc, addrsrc, &data);
+    MEMPHY_write(mpdst, addrdst, data);
+  }
+  return 0;
+}
 struct vm_rg_struct* init_vm_rg(int rg_start, int rg_end)
 {
   struct vm_rg_struct *rgnode = malloc(sizeof(struct vm_rg_struct));
@@ -331,15 +388,24 @@ int print_pgtbl(struct pcb_t *caller, uint32_t start, uint32_t end)
   pgn_start = PAGING_PGN(start);
   pgn_end = PAGING_PGN(end);
 
+
   printf("print_pgtbl: %d - %d", start, end);
-  if (caller == NULL) {printf("NULL caller\n"); return -1;}
+  if (caller == NULL) 
+  {
+
+    printf("NULL caller\n");
+    return -1;
+  }
+
     printf("\n");
 
 
   for(pgit = pgn_start; pgit < pgn_end; pgit++)
   {
+
      printf("%08ld: %08x\n", pgit * sizeof(uint32_t), caller->mm->pgd[pgit]);
   }
+
 
   return 0;
 }

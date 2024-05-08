@@ -15,8 +15,7 @@
 #include "mm.h"
 #include <stdlib.h>
 #include <stdio.h>
-extern tlb_cache;
-extern MAX_CACHE_INDEX;
+
 int tlb_change_all_page_tables_of(struct pcb_t *proc,  struct memphy_struct * mp)
 {
   /* TODO update all page table directory info 
@@ -26,13 +25,11 @@ int tlb_change_all_page_tables_of(struct pcb_t *proc,  struct memphy_struct * mp
   return 0;
 }
 
-int tlb_flush_tlb_of(struct pcb_t *proc, struct memphy_struct *mp)
+int tlb_flush_tlb_of(struct pcb_t *proc, struct memphy_struct * mp)
 {
-    for (int i = 0; i < MAX_CACHE_INDEX; i++) {
-        tlb_cache[i].valid = 0; 
-    }
+  /* TODO flush tlb cached*/
 
-    return 0; 
+  return 0;
 }
 
 /*tlballoc - CPU TLB-based allocate a region memory

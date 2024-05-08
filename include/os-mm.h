@@ -23,7 +23,10 @@ struct vm_rg_struct {
 
    struct vm_rg_struct *rg_next;
 };
-
+struct free_rg_list{
+   struct vm_rg_struct * rg;
+   struct free_rg_list * next;
+};
 /*
  *  Memory area struct
  */
@@ -31,14 +34,15 @@ struct vm_area_struct {
    unsigned long vm_id;
    unsigned long vm_start;
    unsigned long vm_end;
-
    unsigned long sbrk;
+   struct vm_rg_struct * previous_region;
 /*
  * Derived field
  * unsigned long vm_limit = vm_end - vm_start
  */
    struct mm_struct *vm_mm;
-   struct vm_rg_struct *vm_freerg_list;
+   struct vm_rg_struct *vm_rg_list;
+   struct free_rg_list * vm_freerg_list;
    struct vm_area_struct *vm_next;
 };
 

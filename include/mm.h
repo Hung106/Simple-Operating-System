@@ -86,14 +86,15 @@
 #define PAGING_PGN(x)  GETVAL(x,PAGING_PGN_MASK,PAGING_ADDR_PGN_LOBIT)
 /* Extract SWAPTYPE */
 #define PAGING_FPN(x)  GETVAL(x,PAGING_FPN_MASK,PAGING_ADDR_FPN_LOBIT)
-
+#define PAGING_FPN_PRESENT(x)  GETVAL(x,PAGING_FPN_MASK,0)
 /* Memory range operator */
 #define INCLUDE(x1,x2,y1,y2) (((y1-x1)*(x2-y2)>=0)?1:0)
 #define OVERLAP(x1,x2,y1,y2) (((y2-x1)*(x2-y1)>=0)?1:0)
+#define MAX_CACHE_INDEX 256
 
 /* VM region prototypes */
 struct vm_rg_struct * init_vm_rg(int rg_start, int rg_endi);
-int enlist_vm_rg_node(struct vm_rg_struct **rglist, struct vm_rg_struct* rgnode);
+int enlist_vm_freerg_list(struct mm_struct *mm, struct vm_rg_struct *rg_elmt);
 int enlist_pgn_node(struct pgn_t **pgnlist, int pgn);
 int vmap_page_range(struct pcb_t *caller, int addr, int pgnum, 
                     struct framephy_struct *frames, struct vm_rg_struct *ret_rg);
@@ -117,6 +118,7 @@ int __write(struct pcb_t *caller, int vmaid, int rgid, int offset, BYTE value);
 int init_mm(struct mm_struct *mm, struct pcb_t *caller);
 
 /* CPUTLB prototypes */
+int insert_cache_entry(struct pcb_t * proc,  int pgnum);
 int tlb_change_all_page_tables_of(struct pcb_t *proc,  struct memphy_struct * mp);
 int tlb_flush_tlb_of(struct pcb_t *proc, struct memphy_struct * mp);
 int tlballoc(struct pcb_t *proc, uint32_t size, uint32_t reg_index);
@@ -127,7 +129,10 @@ int init_tlbmemphy(struct memphy_struct *mp, int max_size);
 int TLBMEMPHY_read(struct memphy_struct * mp, int addr, BYTE *value);
 int TLBMEMPHY_write(struct memphy_struct * mp, int addr, BYTE data);
 int TLBMEMPHY_dump(struct memphy_struct * mp);
-
+int _cache_page(struct memphy_struct *mpsrc, int srcfpn,
+                struct memphy_struct *mpdst, int dstfpn);
+int tlb_cache_read(struct pcb_t * proc, int pgnum, int offset, BYTE * value);
+int tlb_cache_write(struct pcb_t * proc,  int pgnum, int offset, BYTE value);
 /* VM prototypes */
 int pgalloc(struct pcb_t *proc, uint32_t size, uint32_t reg_index);
 int pgfree_data(struct pcb_t *proc, uint32_t reg_index);
