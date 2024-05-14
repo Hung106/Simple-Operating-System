@@ -317,7 +317,7 @@ int pg_getval(struct mm_struct *mm, int addr, BYTE *data, struct pcb_t *caller)
 
   MEMPHY_read(caller->mram,phyaddr, data);
   _cache_page(caller->mram,fpn,caller->tlb,pgn % MAX_CACHE_INDEX);
-  insert_cache_entry(caller,pgn);
+  insert_entry(caller,pgn);
   return 0;
 }
 
@@ -341,7 +341,7 @@ int pg_setval(struct mm_struct *mm, int addr, BYTE value, struct pcb_t *caller)
 
   MEMPHY_write(caller->mram,phyaddr, value);
   _cache_page(caller->mram,fpn,caller->tlb,pgn % MAX_CACHE_INDEX);
-  insert_cache_entry(caller,pgn);
+  insert_entry(caller,pgn);
    return 0;
 }
 

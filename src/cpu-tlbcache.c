@@ -20,6 +20,7 @@
 #include "mm.h"
 #include <stdlib.h>
 #include <pthread.h>
+#include <stdio.h>
 #define init_tlbcache(mp,sz,...) init_memphy(mp, sz, (1, ##__VA_ARGS__))
 pthread_mutex_t entry_lock = PTHREAD_MUTEX_INITIALIZER;;
 pthread_mutex_t cache_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -35,16 +36,34 @@ static struct cache_entry{
     int pid;
     int tag;
 } tlb_cache[MAX_CACHE_INDEX];
-int insert_cache_entry(struct pcb_t * proc,  int pgnum){
+
+void count_free_entries() {
+    int count = 0;
+    for (int i = 0; i < MAX_CACHE_INDEX; i++) {
+        if (tlb_cache[i].valid == 0) {
+            count++;
+        }
+    }
+    printf("Free_entries : %d\n", count);
+    if (count == 0) {// không còn chỗ trống thì xóa entry đầu
+        tlb_cache[0].valid = 0;
+        tlb_cache[0].pid =0;
+        tlb_cache[0].tag =0;
+        printf("Delete first entries");
+        printf("Free_entries : %d\n", count);}
+}
+int insert_entry(struct pcb_t * proc,  int pgnum){
    int index = pgnum % MAX_CACHE_INDEX;
    int tag = pgnum / MAX_CACHE_INDEX;
    pthread_mutex_lock(&entry_lock);
    tlb_cache[index].valid = 1;
    tlb_cache[index].pid = proc->pid;
    tlb_cache->tag = tag;
+   count_free_entries();
    pthread_mutex_unlock(&entry_lock);
    return 0;
 }
+
 int tlb_cache_read(struct pcb_t * proc, int pgnum, int offset, BYTE * value)
 {
    /* TODO: the identify info is mapped to 

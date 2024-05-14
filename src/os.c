@@ -308,7 +308,7 @@ int main(int argc, char * argv[]) {
  		pthread_join(cpu[i], NULL);
  	}
  	pthread_join(ld, NULL);
-
+	printTLB();
  	/* Stop timer */
  	stop_timer();
 
